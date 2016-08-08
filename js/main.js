@@ -6,11 +6,30 @@ var ballSize,
 		ballObjects = {},
 		defaultMass;
 
+//deceleration is at 1020 pixels^2/sec, or 1.02 pixels^2/millisecond
 
+// remove on throw complete
 
 
 /***************************************************************
 ***************************************************************/
+
+var frictionProof = function(){
+	/*
+		@fn the code used to determine best friction variable,
+					plug into onThrowComplete, gets you 0.539
+	*/
+	var ball = this.vars.data.ballObject,
+			velocity = ball.getVelocityInfo(),
+			time = new Date().getTime(),
+			diff = (time-ball.previousVelocity.time)/1000,
+			previousPostion = ball.previousVelocity.position,
+			currentPosition = ball.getBallPosition(),
+			distance = Math.sqrt(Math.pow(currentPosition.x- previousPostion.x,2)+Math.pow(currentPosition.y- previousPostion.y,2)),
+			deceleration = (velocity.scalar-ball.previousVelocity.velocity.scalar)/diff;
+	var calculatedDistance = 0.539*0.5*Math.pow(ball.previousVelocity.velocity.scalar,2)/1000;
+	console.log(diff, calculatedDistance, distance, distance/calculatedDistance);
+}
 
 var Ball = function(DOM, position, direction, id){
 	this.id = id;
@@ -18,8 +37,10 @@ var Ball = function(DOM, position, direction, id){
 	this.normalizedVector = direction;
 	// this.velocity = defaultVelocity;
 	this.position = {};
+	this.coasting = true;			// if object is not decelerating, make it coast
 	this.setBallPosition(position);
-	this.previousData = {};
+	this.previousVelocity = {};
+	// this.previousData = {};
 	this.velocityTracker = VelocityTracker.track(this.element, "x,y");
 };
 Ball.prototype.getBallPosition = function(){
@@ -44,8 +65,8 @@ Ball.prototype.getVelocityInfo = function() {
 			y = this.velocityTracker.getVelocity('y');
 	return {
 		x : x,
-		y : -y,
-		scalar : vectorMagnitude(x, y)
+		y : -y,				// y coordinates start from zero, making it negative reorientates the velocity
+		scalar : vectorMagnitude(x, y).toFixed(2)
 	};
 };
 
@@ -64,17 +85,23 @@ var initializeNewBall = function(index){
 			id = index;
 
 	randomPosition = {
-		x : Math.random()*(containerSize.width - ballSize/2) + ballSize/2,
-		y : Math.random()*(containerSize.height - ballSize/2) + ballSize/2
+		x : Math.random()*(containerSize.width - ballSize) + ballSize/2,
+		y : Math.random()*(containerSize.height - ballSize) + ballSize/2
 	};
 	ball = new Ball(element, randomPosition, initialDirection, id);
 	TweenLite.set(element, {x:randomPosition.x, y:randomPosition.y, xPercent: -50, yPercent: -50});
 	Draggable.create(element, {
 		type: "x,y", 
-		bounds: ".container",
-		onDrag: updateWorkers,
-		onThrowUpdate: updateWorkers,
-		onRelease: getEndPosition,
+		// bounds: ".container",
+		onDragStart : function(){
+			var ball = this.vars.data.ballObject;
+			// console.log("start");
+			ball.recentlyResolvedWallCollision = "";
+		},
+		onDrag: ballPositionUpdate,
+		onThrowUpdate: ballPositionUpdate,
+		onThrowComplete: monitorBehavior,
+		onRelease: monitorBehavior,
 		ballIndex: i,
 		throwProps: true,
 		throwResistance: 0,
@@ -107,21 +134,73 @@ var getTimeWithVelocity = function(pathLength, velocity) {
 	return pathLength/velocity;
 }
 
+var reanimateBall = function(ball){
+	// TODO: Checks the location of the ball, if it is off the screen, 
+	//				bring it back into the center of the screen. Then reanimate at a slow pace
+	if(!ball){
+		ball = this.vars.data.ballObject;
+	}
+	try {
+		animateTowardDirection(ball);
+	}
+	catch(err) {
+		console.log("ReanimateBall did not work...");
+	}
+	ball.coasting = true;
+};
+
+var animateDecelerationFromVelocity = function(resultVelocity, ballObject) {
+	// TODO: Takes the current velocity and decelerates at
+	//				the approximate rate of deceleration -1000.
+	//				Returns the end position, and how much time it will take
+	//				The end position may not be in bounds
+	var currentPosition = ballObject.getBallPosition();
+	var currentVelocity = ballObject.getVelocityInfo().scalar;
+	var remainingTime = currentVelocity/1000; // -1000 ~= force of friction (F_u) = (v_f-v_i)/time(sec)
+	var expectedDistance = 0.539*0.5*Math.pow(currentVelocity,2)/1000;		// very close estimate to what distance would travel from toss
+	var resultScalar = Math.sqrt(Math.pow(resultVelocity.x,2) + Math.pow(resultVelocity.y, 2));
+	var multiplier = expectedDistance/resultScalar;
+	var endPosition = {
+		x : currentPosition.x + (multiplier * resultVelocity.x),
+		y : currentPosition.y + (multiplier * -resultVelocity.y)
+	};
+
+	TweenLite.to(ballObject.element, remainingTime, {
+		x: endPosition.x, 
+		y: endPosition.y, 
+		onUpdate: ballPositionUpdate, 
+		data: {
+			ballObject : ballObject
+		},
+		onComplete: reanimateBall
+	});
+};
+
 var vectorMagnitude = function(x, y){
 	return Math.sqrt((x*x)+(y*y));
 };
 
 
 
-var getEndPosition = function(e) {
+var monitorBehavior = function(e) {
 	// TODO: onRelease draggable event. gets released position and uses it as intial vector
-	// var ball = this.vars.data.ballObject;
-	// ball.previousData.position = {
-	// 	x : this.x,
-	// 	y : this.y
-	// };
-	// ball.previousData.time = new Date().getMilliseconds();
-	// ball.checkVelocity = true;
+	var ball = this.vars.data.ballObject;
+			
+	ball.coasting = false;
+	
+	setTimeout(function(){
+		/*
+			@fn monitor the ball's status after a second
+					if it's no longer moving, reanimate the ball
+
+		*/
+		var ballVelocity = ball.getVelocityInfo();
+		// console.log(ballVelocity.scalar);
+		if(parseInt(ballVelocity.scalar) == 0){
+			// ball is no longer moving, reanimate ball
+			reanimateBall(ball);
+		}
+	}, 1000);
 };
 
 var getRandomDirection = function(){
@@ -189,15 +268,25 @@ var getEndWallPosition = function(currentPosition, vectorDirection){
 
 };
 
+
+
 var animateTowardDirection = function(ball, vector){
-	// TODO: animates the ball to
+	// TODO: animates the ball to a certain wall based on the vector
 	var endPosition, animationTime;
 	if(vector) {
 		ball.normalizedVector = vector;
 	}
 	endPosition = getEndWallPosition(ball.getBallPosition(), ball.normalizedVector);
 	animationTime = getTimeWithVelocity(endPosition.pathLength, defaultVelocity);
-	TweenLite.to(ball.element, animationTime, {x: endPosition.x, y:endPosition.y, ease: Power0.easeNone, data: {ballObject : ball}, onUpdate: updateWorkers});
+
+	TweenLite.to(ball.element, animationTime, {
+		x: endPosition.x, 
+		y: endPosition.y, 
+		ease: Power0.easeNone, 
+		data: {ballObject : ball}, 
+		onUpdate: ballPositionUpdate
+	});
+
 }
 
 function getInitialLayout(){
@@ -222,44 +311,21 @@ function getInitialLayout(){
 
 
 var collisionWorker = new Worker("./js/collision-worker.js");
-var updateWorkers = function(){
+var ballPositionUpdate = function(){
 	// TODO: update the collision worker with the latest ball position
 	// console.log(this);
 	var ballObject = this.vars.data.ballObject,
-			elementPosition = ballObject.getBallPosition();
+			elementPosition = ballObject.getBallPosition(),
+			ballVelocity = ballObject.getVelocityInfo();
 
 	
-	// console.log();
-	// console.log(VelocityTracker(this,"x,y").getVelocity());
-	// if(ballObject.checkThrow){
-	// 	// get the velocity vector of throw
-	// 	var vector = getVectorFromPoints({x:this.x, y:this.y}, ballObject.previousData.position);
-	// 	vector = getNormalizedVector(vector);
-	// 	ballObject.normalizedVector = vector;
-	// 	ballObject.checkThrow = false;
-	// 	ballObject.checkVelocity = true;
-	// }
-	// if(ballObject.checkVelocity){
-	// 	// should stop checking velocity as soon as velocity is less than or equal default velocity
-	// 	ballObject.currentData = {
-	// 		position : ballObject.getBallPosition(),
-	// 		time: new Date().getMilliseconds() 
-	// 	};
-	// 	collisionWorker.postMessage({
-	// 		id:  ballObject.id,
-	// 		type: "checkVelocity",
-	// 		previousData: ballObject.previousData,
-	// 		currentData: ballObject.currentData
-	// 	});
-	// 	ballObject.previousData = ballObject.currentData;
-	// }
 	
 	// console.log(elementPosition);
 	collisionWorker.postMessage({
 		type:"ballPosition",
 		id: ballObject.id,
 		position: elementPosition,
-		velocityVector: ballObject.getVelocityInfo(),
+		velocityVector: ballVelocity,
 		mass: defaultMass
 		
 
@@ -270,10 +336,18 @@ collisionWorker.addEventListener("message", function(e){
 	var data = e.data;
 	switch(data.type) {
 		case "wallCollision":
-			// console.log("HIT!");
+			var ball = ballObjects[data.id];
+			// console.log("HIT!", ball.getVelocityInfo());
+			ball.normalizedVector = data.normalizedVector;
+			if(ball.coasting){
+				animateTowardDirection(ball);
+			} else if(ball.recentlyResolvedWallCollision != data.wallOfCollision){
+				ball.recentlyResolvedWallCollision = data.wallOfCollision;
+				animateDecelerationFromVelocity(data.resultVelocity, ball);
+				// console.log("HIT WALL-> RESPONSE", data.resultVelocity);
+			}
 			// console.log(data.resultVelocity);
-
-			animateTowardDirection(ballObjects[data.id], data.resultVelocity);
+			// animateTowardDirection(ballObjects[data.id], data.resultVelocity);
 			break;
 		case "velocity": 
 			// var ball = ballObjects[data.id];
@@ -282,7 +356,7 @@ collisionWorker.addEventListener("message", function(e){
 			// ball.normalizedVector = data.normalizedVector;
 			// console.log(ball.normalizedVector);
 			// console.log(data.velocity);
-			// ball.previousVeloscity = data.velocity;
+			// ball.previousVelocity = data.velocity;
 			// if(data.velocity <= defaultVelocity && ball.checkVelocity) {
 			// 	ball.checkVelocity = false;
 			// 	animateTowardDirection(ball, ball.normalizedVector);

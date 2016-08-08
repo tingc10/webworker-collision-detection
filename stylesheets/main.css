@@ -7,6 +7,13 @@ html, body {
 }
 
 /* line 9, ../sass/main.scss */
+.gooey {
+  /* other styles */
+  -webkit-filter: url("#goo");
+  filter: url("../index.html#goo");
+}
+
+/* line 16, ../sass/main.scss */
 .container {
   position: relative;
   display: inline-block;
@@ -14,7 +21,7 @@ html, body {
   height: 100%;
 }
 
-/* line 15, ../sass/main.scss */
+/* line 22, ../sass/main.scss */
 .ball {
   position: absolute;
   width: 200px;

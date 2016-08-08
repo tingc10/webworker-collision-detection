@@ -6,6 +6,13 @@ html, body {
 	overflow: hidden;
 }
 
+.gooey {
+	/* other styles */
+
+	-webkit-filter: url("#goo");
+	filter: url("../index.html#goo");
+}
+
 .container {
 	position: relative;
 	display: inline-block;

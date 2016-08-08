@@ -120,22 +120,33 @@ function checkWallCollision(ballInfo){
 		|| (ballPosition.y+ballSize/2) >= containerSize.height) {
 
 		var wallContactPosition = {},
-				resultVelocity;
+				resultVelocity,
+				wallOfCollision;
 		if(ballPosition.x <= ballSize/2) {
 			wallContactPosition.x = 0;
 			wallContactPosition.y = ballPosition.y;
+			wallOfCollision = "left";
 		} else if(ballPosition.y <= ballSize/2 ) {
 			wallContactPosition.x = ballPosition.x;
 			wallContactPosition.y = 0;
+			wallOfCollision = "top";
 		} else if ((ballPosition.x+ballSize/2) >= containerSize.width) {
 			wallContactPosition.x = containerSize.width;
 			wallContactPosition.y = ballPosition.y;
+			wallOfCollision = "right";
 		} else if((ballPosition.y+ballSize/2) >= containerSize.height) {
 			wallContactPosition.x = ballPosition.x;
 			wallContactPosition.y = containerSize.height;
+			wallOfCollision = "bottom";
 		}
 		resultVelocity = calculateWallCollision(wallContactPosition, ballInfo);
-		self.postMessage({type:"wallCollision", resultVelocity: resultVelocity, id: ballInfo.id});
+		self.postMessage({
+			type:"wallCollision", 
+			resultVelocity: resultVelocity,
+			normalizedVector: Math.normalizeVector(resultVelocity),
+			id: ballInfo.id,
+			wallOfCollision : wallOfCollision
+		});
 	}
 
 };
